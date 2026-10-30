@@ -1,0 +1,1503 @@
+package com.foss.aihub.ui.screens
+
+import android.content.Context
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.Block
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.CloudSync
+import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.Computer
+import androidx.compose.material.icons.outlined.Cookie
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.FilterList
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.material.icons.outlined.Restore
+import androidx.compose.material.icons.outlined.TextIncrease
+import androidx.compose.material.icons.outlined.Wifi
+import androidx.compose.material.icons.outlined.ZoomIn
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.foss.aihub.R
+import com.foss.aihub.models.AiService
+import com.foss.aihub.ui.components.Md3TopAppBar
+import com.foss.aihub.utils.SettingsBackupHelper
+import com.foss.aihub.utils.SettingsManager
+import com.foss.aihub.utils.capitalizeFirstLetter
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun SettingsScreen(
+    context: Context,
+    aiServices: List<AiService>,
+    onBack: () -> Unit,
+    settingsManager: SettingsManager,
+    onManageServices: () -> Unit,
+    onCustomInjection: () -> Unit,
+    onClearCache: () -> Unit,
+    onClearData: () -> Unit,
+) {
+    val snackbarHostState = remember { SnackbarHostState() }
+    val settings by settingsManager.settingsFlow.collectAsState()
+    val coroutineScope = rememberCoroutineScope()
+
+    val backupHelper = remember { SettingsBackupHelper(settingsManager) }
+
+    val backupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        uri?.let {
+            coroutineScope.launch {
+                val success = backupHelper.backupToUri(context, it)
+                snackbarHostState.showSnackbar(
+                    if (success) context.getString(R.string.setting_backup_success) else context.getString(
+                        R.string.setting_backup_failed
+                    )
+                )
+            }
+        }
+    }
+
+    var loadLastAi by remember { mutableStateOf(settings.loadLastOpenedAI) }
+    var multipleDefaultAi by remember { mutableStateOf(settings.multipleDefaultAi) }
+    var defaultServiceName by remember {
+        mutableStateOf(settingsManager.getDefaultService() ?: aiServices.first().name)
+    }
+    var defaultServiceNames by remember { mutableStateOf(settings.defaultServiceNames) }
+    var enabledServices by remember { mutableStateOf(settings.enabledServices) }
+    var enableNewServices by remember { mutableStateOf(settings.enableNewServicesByDefault) }
+    var selectedCategories by remember { mutableStateOf(settings.preferredCategories) }
+    var selectedPricing by remember { mutableStateOf(settings.preferredPrices) }
+    var selectedPrivacy by remember { mutableStateOf(settings.preferredPrivacy) }
+    var selectedLoginRequired by remember {
+        mutableStateOf(
+            when (settings.preferredLoginRequired) {
+                true -> setOf("Required")
+                false -> setOf("Not Required")
+                else -> emptySet()
+            }
+        )
+    }
+    var showSelectionPreferencesDialog by remember { mutableStateOf(false) }
+
+    val categories = aiServices.map { it.category }.distinct().sorted()
+    val pricings = aiServices.map { it.pricing }.distinct().sorted()
+    val privacies = aiServices.map { it.privacy }.distinct().sorted()
+
+    var limitSimultaneousAIs by remember { mutableStateOf(settings.maxKeepAlive != Int.MAX_VALUE) }
+    var maxKeepAlive by remember {
+        mutableIntStateOf(if (settings.maxKeepAlive == Int.MAX_VALUE) 5 else settings.maxKeepAlive)
+    }
+
+    var enableZoom by remember { mutableStateOf(settings.enableZoom) }
+    var desktopView by remember { mutableStateOf(settings.desktopView) }
+    var thirdPartyCookies by remember { mutableStateOf(settings.thirdPartyCookies) }
+    var selectedFontSizePercent by remember { mutableIntStateOf(settings.fontSizePercentage) }
+
+    var blockUnnecessaryConnections by remember { mutableStateOf(settings.blockAdsAndTrackers) }
+    var proxyOption by remember { mutableStateOf(if (settings.isProxy) settings.proxyType else "none") }
+    var proxyHost by remember { mutableStateOf(settings.proxyHost) }
+    var proxyPort by remember { mutableStateOf(settings.proxyPort) }
+
+    var showClearCacheDialog by remember { mutableStateOf(false) }
+    var showClearDataDialog by remember { mutableStateOf(false) }
+
+    var showRestoreConfirmDialog by remember { mutableStateOf(false) }
+
+    var checkForUpdate by remember { mutableStateOf(settings.checkForUpdate) }
+    var cloudUpdatesEnabled by remember { mutableStateOf(settings.updateFrequencyDays != -1) }
+    var cloudUpdateFrequencyDays by remember { mutableIntStateOf(if (settings.updateFrequencyDays != -1) settings.updateFrequencyDays else 1) }
+
+    val orderedServices = remember(settings, aiServices) {
+        settingsManager.loadServiceOrder().filter { it in settingsManager.loadEnabledServices() }
+            .mapNotNull { name -> aiServices.find { it.name == name } }
+    }
+
+    val defaultSwitchTheme = SwitchDefaults.colors(
+        checkedThumbColor = MaterialTheme.colorScheme.primary,
+        checkedTrackColor = MaterialTheme.colorScheme.primaryContainer,
+        uncheckedThumbColor = MaterialTheme.colorScheme.outline,
+        uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant
+    )
+
+    val restoreLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            coroutineScope.launch {
+                val settingsBackup = backupHelper.restoreFromUri(context, it)
+                if (settingsBackup != null) {
+                    val restored = settingsBackup.appSettings
+
+                    settingsManager.updateSettings {
+                        it.loadLastOpenedAI = restored.loadLastOpenedAI
+                        it.multipleDefaultAi = restored.multipleDefaultAi
+                        it.defaultServiceName = restored.defaultServiceName
+                        it.defaultServiceNames = restored.defaultServiceNames
+                        it.enabledServices = restored.enabledServices
+                        it.enableNewServicesByDefault = restored.enableNewServicesByDefault
+                        it.preferredCategories = restored.preferredCategories
+                        it.preferredPrices = restored.preferredPrices
+                        it.preferredPrivacy = restored.preferredPrivacy
+                        it.preferredLoginRequired = restored.preferredLoginRequired
+                        it.maxKeepAlive = restored.maxKeepAlive
+                        it.enableZoom = restored.enableZoom
+                        it.desktopView = restored.desktopView
+                        it.thirdPartyCookies = restored.thirdPartyCookies
+                        it.fontSizePercentage = restored.fontSizePercentage
+                        it.blockAdsAndTrackers = restored.blockAdsAndTrackers
+                        it.checkForUpdate = restored.checkForUpdate
+                        it.isProxy = restored.isProxy
+                        it.proxyType = restored.proxyType
+                        it.proxyHost = restored.proxyHost
+                        it.proxyPort = restored.proxyPort
+                        it.serviceOrder = restored.serviceOrder
+                        it.favoriteServices = restored.favoriteServices
+                    }
+
+                    loadLastAi = restored.loadLastOpenedAI
+                    multipleDefaultAi = restored.multipleDefaultAi
+                    defaultServiceName =
+                        restored.defaultServiceName ?: aiServices.firstOrNull()?.name ?: ""
+                    defaultServiceNames = restored.defaultServiceNames
+                    enabledServices = restored.enabledServices
+                    enableNewServices = restored.enableNewServicesByDefault
+                    selectedCategories = restored.preferredCategories
+                    selectedPricing = restored.preferredPrices
+                    selectedPrivacy = restored.preferredPrivacy
+                    selectedLoginRequired = when (restored.preferredLoginRequired) {
+                        true -> setOf("Required")
+                        false -> setOf("Not Required")
+                        else -> emptySet()
+                    }
+                    limitSimultaneousAIs = restored.maxKeepAlive != Int.MAX_VALUE
+                    maxKeepAlive =
+                        if (restored.maxKeepAlive == Int.MAX_VALUE) 5 else restored.maxKeepAlive
+                    enableZoom = restored.enableZoom
+                    desktopView = restored.desktopView
+                    thirdPartyCookies = restored.thirdPartyCookies
+                    selectedFontSizePercent = restored.fontSizePercentage
+                    blockUnnecessaryConnections = restored.blockAdsAndTrackers
+                    proxyOption = if (restored.isProxy) restored.proxyType else "none"
+                    proxyHost = restored.proxyHost
+                    proxyPort = restored.proxyPort
+                    checkForUpdate = restored.checkForUpdate
+                    cloudUpdatesEnabled = restored.updateFrequencyDays != -1
+                    cloudUpdateFrequencyDays =
+                        if (restored.updateFrequencyDays != -1) restored.updateFrequencyDays else 1
+
+                    snackbarHostState.showSnackbar(context.getString(R.string.setting_restore_success))
+                } else {
+                    snackbarHostState.showSnackbar(context.getString(R.string.setting_restore_failed))
+                }
+            }
+        }
+    }
+
+
+    LaunchedEffect(selectedCategories) {
+        settingsManager.updateSettings { it.preferredCategories = selectedCategories }
+    }
+    LaunchedEffect(selectedPricing) {
+        settingsManager.updateSettings { it.preferredPrices = selectedPricing }
+    }
+    LaunchedEffect(selectedPrivacy) {
+        settingsManager.updateSettings { it.preferredPrivacy = selectedPrivacy }
+    }
+    LaunchedEffect(selectedLoginRequired) {
+        val loginPref = when {
+            selectedLoginRequired.contains("Required") -> true
+            selectedLoginRequired.contains("Not Required") -> false
+            else -> null
+        }
+        settingsManager.updateSettings { it.preferredLoginRequired = loginPref }
+    }
+    LaunchedEffect(cloudUpdatesEnabled, cloudUpdateFrequencyDays) {
+        val days = if (cloudUpdatesEnabled) cloudUpdateFrequencyDays else -1
+        settingsManager.updateSettings { it.updateFrequencyDays = days }
+    }
+    LaunchedEffect(enableNewServices) {
+        settingsManager.updateSettings { it.enableNewServicesByDefault = enableNewServices }
+    }
+    LaunchedEffect(defaultServiceNames) {
+        settingsManager.updateSettings { it.defaultServiceNames = defaultServiceNames }
+    }
+    LaunchedEffect(loadLastAi) {
+        settingsManager.updateSettings { it.loadLastOpenedAI = loadLastAi }
+    }
+    LaunchedEffect(defaultServiceName) {
+        settingsManager.updateSettings { it.defaultServiceName = defaultServiceName }
+        if (!multipleDefaultAi) {
+            settingsManager.updateSettings { it.defaultServiceNames = setOf(defaultServiceName) }
+        }
+    }
+    LaunchedEffect(multipleDefaultAi) {
+        settingsManager.updateSettings { it.multipleDefaultAi = multipleDefaultAi }
+        if (multipleDefaultAi && defaultServiceNames.isEmpty()) {
+            settingsManager.updateSettings { it.defaultServiceNames = setOf(defaultServiceName) }
+        }
+    }
+    LaunchedEffect(enabledServices) {
+        settingsManager.updateSettings { it.enabledServices = enabledServices }
+        if (defaultServiceName !in enabledServices && enabledServices.isNotEmpty()) {
+            defaultServiceName = enabledServices.first()
+        }
+    }
+
+    LaunchedEffect(limitSimultaneousAIs, maxKeepAlive) {
+        val value = if (limitSimultaneousAIs) maxKeepAlive else Int.MAX_VALUE
+        settingsManager.updateSettings { it.maxKeepAlive = value }
+        if (limitSimultaneousAIs && defaultServiceNames.size > maxKeepAlive) {
+            val trimmedNames =
+                orderedServices.filter { it.name in defaultServiceNames }.take(maxKeepAlive)
+                    .map { it.name }.toSet()
+            defaultServiceNames = trimmedNames
+        }
+    }
+
+    LaunchedEffect(selectedFontSizePercent) {
+        settingsManager.updateSettings { it.fontSizePercentage = selectedFontSizePercent }
+    }
+    LaunchedEffect(enableZoom) {
+        settingsManager.updateSettings { it.enableZoom = enableZoom }
+    }
+    LaunchedEffect(desktopView) {
+        settingsManager.updateSettings { it.desktopView = desktopView }
+    }
+    LaunchedEffect(thirdPartyCookies) {
+        settingsManager.updateSettings { it.thirdPartyCookies = thirdPartyCookies }
+    }
+
+    LaunchedEffect(proxyOption) {
+        settingsManager.updateSettings {
+            it.isProxy = proxyOption != "none"
+            if (proxyOption != "none") it.proxyType = proxyOption
+        }
+    }
+    LaunchedEffect(proxyHost) { settingsManager.updateSettings { it.proxyHost = proxyHost } }
+    LaunchedEffect(proxyPort) { settingsManager.updateSettings { it.proxyPort = proxyPort } }
+
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        topBar = { Md3TopAppBar(title = stringResource(R.string.title_settings), onBack = onBack) },
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        containerColor = MaterialTheme.colorScheme.surface
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item {
+                Text(
+                    text = stringResource(R.string.section_preferences),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                )
+            }
+
+            item {
+                SettingsCard {
+                    Column {
+                        SettingItem(
+                            title = stringResource(R.string.setting_restore_last_ai),
+                            description = stringResource(R.string.setting_restore_last_ai_description),
+                            icon = Icons.Outlined.Restore,
+                            iconColor = MaterialTheme.colorScheme.primary
+                        ) {
+                            Switch(
+                                checked = loadLastAi,
+                                onCheckedChange = { loadLastAi = it },
+                                colors = defaultSwitchTheme
+                            )
+                        }
+
+                        AnimatedVisibility(
+                            visible = !loadLastAi,
+                            enter = fadeIn() + expandVertically(),
+                            exit = fadeOut() + shrinkVertically()
+                        ) {
+                            Column(modifier = Modifier.padding(bottom = 8.dp)) {
+                                SettingItem(
+                                    title = stringResource(R.string.setting_multiple_default_ai),
+                                    description = stringResource(R.string.setting_multiple_default_ai_description),
+                                    icon = Icons.Outlined.Computer,
+                                    iconColor = MaterialTheme.colorScheme.primary
+                                ) {
+                                    Switch(
+                                        checked = multipleDefaultAi,
+                                        onCheckedChange = { multipleDefaultAi = it },
+                                        colors = defaultSwitchTheme
+                                    )
+                                }
+
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.outlineVariant,
+                                    modifier = Modifier.padding(horizontal = 16.dp)
+                                )
+
+                                ListItem(
+                                    headlineContent = {
+                                        Text(
+                                            text = stringResource(R.string.setting_default_ai),
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    },
+                                    supportingContent = {
+                                        Text(stringResource(R.string.setting_default_ai_description))
+                                    },
+                                    leadingContent = {
+                                        Icon(
+                                            Icons.Outlined.Home,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    },
+                                )
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                                ) {
+                                    orderedServices.forEach { service ->
+                                        val isSelected = if (multipleDefaultAi) {
+                                            service.name in defaultServiceNames
+                                        } else {
+                                            service.name == defaultServiceName
+                                        }
+
+                                        FilterChip(
+                                            selected = isSelected,
+                                            onClick = {
+                                                if (multipleDefaultAi) {
+                                                    defaultServiceNames = if (isSelected) {
+                                                        defaultServiceNames - service.name
+                                                    } else {
+                                                        if (defaultServiceNames.size < maxKeepAlive) {
+                                                            defaultServiceNames + service.name
+                                                        } else {
+                                                            defaultServiceNames
+                                                        }
+                                                    }
+                                                    defaultServiceName =
+                                                        if (defaultServiceNames.isNotEmpty()) {
+                                                            defaultServiceNames.first()
+                                                        } else {
+                                                            ""
+                                                        }
+                                                } else {
+                                                    defaultServiceName = service.name
+                                                    defaultServiceNames = setOf(service.name)
+                                                }
+                                            },
+                                            label = {
+                                                Text(
+                                                    service.name,
+                                                    style = MaterialTheme.typography.labelLarge,
+                                                    maxLines = 1
+                                                )
+                                            },
+                                            leadingIcon = if (isSelected) {
+                                                {
+                                                    Icon(
+                                                        Icons.Default.Check,
+                                                        contentDescription = stringResource(R.string.label_selected),
+                                                        modifier = Modifier.size(18.dp),
+                                                        tint = service.accentColor
+                                                    )
+                                                }
+                                            } else null,
+                                            colors = FilterChipDefaults.filterChipColors())
+                                    }
+
+                                    if (orderedServices.isEmpty()) {
+                                        Text(
+                                            text = stringResource(R.string.msg_no_ai_services_enabled),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(8.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+
+                        SettingItem(
+                            title = stringResource(R.string.setting_manage_ai_services),
+                            description = stringResource(R.string.setting_manage_ai_services_description),
+                            icon = Icons.Outlined.Apps,
+                            iconColor = MaterialTheme.colorScheme.primary,
+                            onClick = onManageServices,
+                            trailingContent = {
+                                Icon(
+                                    Icons.Outlined.ChevronRight,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            })
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    text = stringResource(R.string.setting_auto_enable_services),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                )
+            }
+
+            item {
+                SettingsCard {
+                    Column {
+                        SettingItem(
+                            title = stringResource(R.string.setting_auto_enable_services),
+                            description = stringResource(R.string.setting_auto_enable_services_description),
+                            icon = Icons.Outlined.Add,
+                            iconColor = MaterialTheme.colorScheme.primary
+                        ) {
+                            Switch(
+                                checked = enableNewServices,
+                                onCheckedChange = { enableNewServices = it },
+                                colors = defaultSwitchTheme
+                            )
+                        }
+
+                        AnimatedVisibility(
+                            visible = enableNewServices,
+                            enter = fadeIn() + expandVertically(),
+                            exit = fadeOut() + shrinkVertically()
+                        ) {
+                            Column {
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.outlineVariant,
+                                    modifier = Modifier.padding(horizontal = 16.dp)
+                                )
+
+                                SettingItem(
+                                    title = stringResource(R.string.title_selection_preferences),
+                                    description = stringResource(R.string.selection_preferences_description),
+                                    icon = Icons.Outlined.FilterList,
+                                    iconColor = MaterialTheme.colorScheme.primary,
+                                    onClick = { showSelectionPreferencesDialog = true },
+                                    trailingContent = {
+                                        Icon(
+                                            Icons.Outlined.ChevronRight,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    text = stringResource(R.string.section_cloud_updates),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                )
+            }
+
+            item {
+                SettingsCard {
+                    Column {
+                        var showFrequencyOptions by remember { mutableStateOf(false) }
+
+                        LaunchedEffect(checkForUpdate) {
+                            settingsManager.updateSettings { it.checkForUpdate = checkForUpdate }
+                        }
+
+                        SettingItem(
+                            title = stringResource(R.string.setting_check_app_updates),
+                            description = stringResource(R.string.setting_check_app_updates_description),
+                            icon = Icons.Default.SystemUpdate,
+                            iconColor = MaterialTheme.colorScheme.primary
+                        ) {
+                            Switch(
+                                checked = checkForUpdate, onCheckedChange = {
+                                    checkForUpdate = it
+                                }, colors = defaultSwitchTheme
+                            )
+                        }
+
+                        SettingItem(
+                            title = stringResource(R.string.setting_enable_cloud_updates),
+                            description = stringResource(R.string.setting_enable_cloud_updates_description),
+                            icon = Icons.Outlined.CloudSync,
+                            iconColor = MaterialTheme.colorScheme.primary
+                        ) {
+                            Switch(
+                                checked = cloudUpdatesEnabled,
+                                onCheckedChange = { cloudUpdatesEnabled = it },
+                                colors = defaultSwitchTheme
+                            )
+                        }
+
+                        AnimatedVisibility(
+                            visible = cloudUpdatesEnabled,
+                            enter = fadeIn() + expandVertically(),
+                            exit = fadeOut() + shrinkVertically()
+                        ) {
+                            Column {
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.outlineVariant,
+                                    modifier = Modifier.padding(horizontal = 16.dp)
+                                )
+
+                                SettingItem(
+                                    title = stringResource(R.string.setting_update_frequency),
+                                    description = stringResource(R.string.setting_update_frequency_description),
+                                    icon = Icons.Outlined.CloudSync,
+                                    iconColor = MaterialTheme.colorScheme.primary,
+                                    onClick = { showFrequencyOptions = !showFrequencyOptions }) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = when (cloudUpdateFrequencyDays) {
+                                                1 -> stringResource(R.string.label_frequency_1_day)
+                                                3 -> stringResource(R.string.label_frequency_3_days)
+                                                7 -> stringResource(R.string.label_frequency_1_week)
+                                                else -> stringResource(R.string.label_frequency_1_day)
+                                            },
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(end = 8.dp)
+                                        )
+                                        Icon(
+                                            if (showFrequencyOptions) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                                            null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+
+                                AnimatedVisibility(
+                                    visible = showFrequencyOptions,
+                                    enter = fadeIn() + expandVertically(),
+                                    exit = fadeOut() + shrinkVertically()
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(
+                                            start = 56.dp, end = 16.dp, bottom = 12.dp
+                                        )
+                                    ) {
+                                        val frequencyOptions = listOf(1, 3, 7)
+                                        frequencyOptions.forEach { days ->
+                                            Row(modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    cloudUpdateFrequencyDays = days
+                                                    showFrequencyOptions = false
+                                                }
+                                                .padding(vertical = 8.dp),
+                                                verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = when (days) {
+                                                        1 -> stringResource(R.string.label_frequency_1_day)
+                                                        3 -> stringResource(R.string.label_frequency_3_days)
+                                                        7 -> stringResource(R.string.label_frequency_1_week)
+                                                        else -> ""
+                                                    },
+                                                    modifier = Modifier.weight(1f),
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                                if (cloudUpdateFrequencyDays == days) {
+                                                    Icon(
+                                                        Icons.Outlined.CheckCircle,
+                                                        null,
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    text = stringResource(R.string.section_performance),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                )
+            }
+
+            item {
+                SettingsCard {
+                    Column {
+                        SettingItem(
+                            title = stringResource(R.string.setting_memory_management),
+                            description = stringResource(R.string.setting_memory_management_description),
+                            icon = Icons.Outlined.Layers,
+                            iconColor = MaterialTheme.colorScheme.primary
+                        ) {
+                            Switch(
+                                checked = limitSimultaneousAIs,
+                                onCheckedChange = { limitSimultaneousAIs = it },
+                                colors = defaultSwitchTheme
+                            )
+                        }
+
+                        AnimatedVisibility(
+                            visible = limitSimultaneousAIs,
+                            enter = fadeIn() + expandVertically(),
+                            exit = fadeOut() + shrinkVertically()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(
+                                    start = 56.dp, end = 16.dp, bottom = 8.dp
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Text(
+                                        "${stringResource(R.string.label_max)}:",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(bottom = 4.dp)
+                                    )
+                                    SingleChoiceSegmentedButtonRow(
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        (1..5).forEach { value ->
+                                            SegmentedButton(
+                                                selected = maxKeepAlive == value,
+                                                onClick = { maxKeepAlive = value },
+                                                shape = SegmentedButtonDefaults.itemShape(
+                                                    index = value - 1, count = 5
+                                                ),
+                                                colors = SegmentedButtonDefaults.colors(
+                                                    activeContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                                    activeContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                                )
+                                            ) {
+                                                Text(
+                                                    "$value",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    text = stringResource(R.string.section_webview),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                )
+            }
+
+            item {
+                SettingsCard {
+                    Column {
+                        SettingItem(
+                            title = stringResource(R.string.setting_pinch_to_zoom),
+                            description = stringResource(R.string.setting_pinch_to_zoom_description),
+                            icon = Icons.Outlined.ZoomIn,
+                            iconColor = MaterialTheme.colorScheme.primary
+                        ) {
+                            Switch(
+                                checked = enableZoom,
+                                onCheckedChange = { enableZoom = it },
+                                colors = defaultSwitchTheme
+                            )
+                        }
+
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+
+                        SettingItem(
+                            title = stringResource(R.string.setting_desktop_mode),
+                            description = stringResource(R.string.setting_desktop_mode_description),
+                            icon = Icons.Outlined.Computer,
+                            iconColor = MaterialTheme.colorScheme.primary
+                        ) {
+                            Switch(
+                                checked = desktopView,
+                                onCheckedChange = { desktopView = it },
+                                colors = defaultSwitchTheme
+                            )
+                        }
+
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+
+                        SettingItem(
+                            title = stringResource(R.string.setting_third_party_cookies),
+                            description = stringResource(R.string.setting_third_party_cookies_description),
+                            icon = Icons.Outlined.Cookie,
+                            iconColor = MaterialTheme.colorScheme.primary
+                        ) {
+                            Switch(
+                                checked = thirdPartyCookies,
+                                onCheckedChange = { thirdPartyCookies = it },
+                                colors = defaultSwitchTheme
+                            )
+                        }
+
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+
+                        SettingItem(
+                            title = stringResource(R.string.setting_custom_injection),
+                            description = stringResource(R.string.setting_custom_injection_description),
+                            icon = Icons.Outlined.Code,
+                            iconColor = MaterialTheme.colorScheme.primary,
+                            onClick = onCustomInjection,
+                            trailingContent = {
+                                Icon(
+                                    Icons.Outlined.ChevronRight,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            })
+
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+
+                        SettingItem(
+                            title = stringResource(R.string.setting_font_size),
+                            description = stringResource(R.string.setting_font_size_description),
+                            icon = Icons.Outlined.TextIncrease,
+                            iconColor = MaterialTheme.colorScheme.primary,
+                        ) {
+                            Text(
+                                text = "$selectedFontSizePercent%",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(end = 8.dp)
+                            )
+                        }
+
+                        AnimatedVisibility(
+                            visible = true,
+                            enter = fadeIn() + expandVertically(),
+                            exit = fadeOut() + shrinkVertically()
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 56.dp, end = 16.dp, bottom = 12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        stringResource(R.string.label_font_size_small),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        stringResource(R.string.label_font_size_medium),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        stringResource(R.string.label_font_size_large),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                Slider(
+                                    value = selectedFontSizePercent.toFloat(),
+                                    onValueChange = { newValue ->
+                                        selectedFontSizePercent = newValue.roundToInt()
+                                    },
+                                    valueRange = 80f..120f,
+                                    steps = 7,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = MaterialTheme.colorScheme.primary,
+                                        activeTrackColor = MaterialTheme.colorScheme.primary,
+                                        inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    text = stringResource(R.string.section_security_privacy),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                )
+            }
+
+            item {
+                SettingsCard {
+                    Column {
+                        SettingItem(
+                            title = stringResource(R.string.setting_block_trackers_ads),
+                            description = stringResource(R.string.setting_block_trackers_ads_description),
+                            icon = Icons.Outlined.Block,
+                            iconColor = MaterialTheme.colorScheme.primary
+                        ) {
+                            Switch(
+                                checked = blockUnnecessaryConnections, onCheckedChange = {
+                                    blockUnnecessaryConnections = it
+                                    settingsManager.updateSettings { settings ->
+                                        settings.blockAdsAndTrackers = it
+                                    }
+                                }, colors = defaultSwitchTheme
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+
+                    var showProxyOptions by remember { mutableStateOf(false) }
+
+                    LaunchedEffect(Unit) {
+                        snapshotFlow { Triple(proxyOption, proxyHost, proxyPort) }.drop(1).collect {
+                            snackbarHostState.showSnackbar(
+                                context.getString(R.string.msg_restart_required)
+                            )
+                        }
+                    }
+
+                    SettingItem(
+                        title = stringResource(R.string.label_proxy),
+                        description = stringResource(R.string.msg_set_proxy),
+                        icon = Icons.Outlined.Wifi,
+                        iconColor = MaterialTheme.colorScheme.primary,
+                        onClick = { showProxyOptions = !showProxyOptions }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = when (proxyOption) {
+                                    "none" -> stringResource(R.string.label_no_proxy)
+                                    "http" -> stringResource(R.string.label_http)
+                                    "socks" -> stringResource(R.string.label_socks)
+                                    else -> proxyOption
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(end = 8.dp)
+                            )
+                            Icon(
+                                if (showProxyOptions) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                                null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    AnimatedVisibility(
+                        visible = showProxyOptions,
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(start = 56.dp, end = 16.dp, bottom = 12.dp)
+                        ) {
+                            SingleChoiceSegmentedButtonRow(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp)
+                            ) {
+                                listOf(
+                                    "none" to stringResource(R.string.label_none),
+                                    "http" to stringResource(R.string.label_http),
+                                    "socks" to stringResource(R.string.label_socks)
+                                ).forEachIndexed { index, (type, label) ->
+                                    SegmentedButton(
+                                        selected = proxyOption == type,
+                                        onClick = { proxyOption = type },
+                                        shape = SegmentedButtonDefaults.itemShape(
+                                            index = index, count = 3
+                                        ),
+                                        colors = SegmentedButtonDefaults.colors(
+                                            activeContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                            activeContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    ) {
+                                        Text(label)
+                                    }
+                                }
+                            }
+
+                            AnimatedVisibility(
+                                visible = proxyOption != "none",
+                                enter = fadeIn() + expandVertically(),
+                                exit = fadeOut() + shrinkVertically()
+                            ) {
+                                Column(modifier = Modifier.padding(top = 8.dp)) {
+                                    OutlinedTextField(
+                                        value = proxyHost,
+                                        onValueChange = { proxyHost = it },
+                                        label = { Text(stringResource(R.string.label_host)) },
+                                        singleLine = true,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(bottom = 8.dp)
+                                    )
+                                    OutlinedTextField(
+                                        value = proxyPort,
+                                        onValueChange = { proxyPort = it },
+                                        label = { Text(stringResource(R.string.label_port)) },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    text = stringResource(R.string.section_storage),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                )
+            }
+
+            item {
+                SettingsCard {
+                    Column {
+                        SettingItem(
+                            title = stringResource(R.string.action_clear_all_cache),
+                            description = stringResource(R.string.action_clear_all_cache_description),
+                            icon = Icons.Outlined.Delete,
+                            iconColor = MaterialTheme.colorScheme.primary,
+                            onClick = { showClearCacheDialog = true },
+                            trailingContent = {
+                                Icon(Icons.Outlined.ChevronRight, null)
+                            })
+
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+
+                        SettingItem(
+                            title = stringResource(R.string.action_clear_all_data),
+                            description = stringResource(R.string.action_clear_all_data_description),
+                            icon = Icons.Outlined.DeleteSweep,
+                            iconColor = MaterialTheme.colorScheme.error,
+                            onClick = { showClearDataDialog = true },
+                            trailingContent = {
+                                Icon(
+                                    Icons.Outlined.ChevronRight,
+                                    null,
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            })
+                    }
+                }
+            }
+
+            item {
+                Text(
+                    text = stringResource(R.string.setting_backup_restore),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                )
+            }
+
+            item {
+                SettingsCard {
+                    Column {
+                        SettingItem(
+                            title = stringResource(R.string.setting_backup),
+                            description = stringResource(R.string.setting_backup_description),
+                            icon = Icons.Outlined.CloudSync,
+                            iconColor = MaterialTheme.colorScheme.primary,
+                            onClick = {
+                                backupLauncher.launch("aihub_settings_backup.json")
+                            },
+                            trailingContent = {
+                                Icon(Icons.Outlined.ChevronRight, null)
+                            },
+                        )
+
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+
+                        SettingItem(
+                            title = stringResource(R.string.setting_restore),
+                            description = stringResource(R.string.setting_restore_description),
+                            icon = Icons.Outlined.Restore,
+                            iconColor = MaterialTheme.colorScheme.primary,
+                            onClick = { showRestoreConfirmDialog = true },
+                            trailingContent = {
+                                Icon(Icons.Outlined.ChevronRight, null)
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (showSelectionPreferencesDialog) {
+        SelectionPreferencesDialog(
+            categories = categories,
+            pricings = pricings,
+            privacies = privacies,
+            selectedCategories = selectedCategories,
+            selectedPricing = selectedPricing,
+            selectedPrivacy = selectedPrivacy,
+            selectedLoginRequired = selectedLoginRequired,
+            onCategoriesChange = { selectedCategories = it },
+            onPricingChange = { selectedPricing = it },
+            onPrivacyChange = { selectedPrivacy = it },
+            onLoginRequiredChange = { selectedLoginRequired = it },
+            onDismiss = { showSelectionPreferencesDialog = false })
+    }
+
+    if (showClearCacheDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearCacheDialog = false },
+            title = { Text(stringResource(R.string.action_clear_cache)) },
+            text = { Text(stringResource(R.string.msg_clear_all_cache_confirmation)) },
+            confirmButton = {
+                TextButton(onClick = { onClearCache(); showClearCacheDialog = false }) {
+                    Text(stringResource(R.string.action_clear))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearCacheDialog = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            })
+    }
+
+    if (showClearDataDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearDataDialog = false },
+            title = {
+                Text(
+                    stringResource(R.string.action_clear_all_data),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.error
+                )
+            },
+            text = { Text(stringResource(R.string.msg_clear_all_data_confirmation)) },
+            confirmButton = {
+                TextButton(onClick = { onClearData(); showClearDataDialog = false }) {
+                    Text(
+                        stringResource(R.string.action_clear_everything),
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearDataDialog = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            })
+    }
+
+    if (showRestoreConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showRestoreConfirmDialog = false },
+            title = { Text(stringResource(R.string.setting_restore)) },
+            text = { Text(stringResource(R.string.setting_restore_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showRestoreConfirmDialog = false
+                        restoreLauncher.launch(arrayOf("application/json"))
+                    },
+                ) {
+                    Text(stringResource(R.string.action_restore))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRestoreConfirmDialog = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun SelectionPreferencesDialog(
+    categories: List<String>,
+    pricings: List<String>,
+    privacies: List<String>,
+    selectedCategories: Set<String>,
+    selectedPricing: Set<String>,
+    selectedPrivacy: Set<String>,
+    selectedLoginRequired: Set<String>,
+    onCategoriesChange: (Set<String>) -> Unit,
+    onPricingChange: (Set<String>) -> Unit,
+    onPrivacyChange: (Set<String>) -> Unit,
+    onLoginRequiredChange: (Set<String>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss, title = {
+        Text(
+            text = stringResource(R.string.title_selection_preferences),
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+    }, text = {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            FilterCard(
+                title = stringResource(R.string.filter_category),
+                items = categories,
+                selectedItems = selectedCategories,
+                onToggle = { category ->
+                    if (selectedCategories.size == 1 && selectedCategories.contains(category)) return@FilterCard
+                    onCategoriesChange(
+                        if (category in selectedCategories) selectedCategories - category
+                        else selectedCategories + category
+                    )
+                },
+                hintText = if (selectedCategories.size == 1) stringResource(R.string.filter_keep_one_hint) else null
+            )
+
+            FilterCard(
+                title = stringResource(R.string.filter_price),
+                items = pricings,
+                selectedItems = selectedPricing,
+                onToggle = { pricing ->
+                    if (selectedPricing.size == 1 && selectedPricing.contains(pricing)) return@FilterCard
+                    onPricingChange(
+                        if (pricing in selectedPricing) selectedPricing - pricing
+                        else selectedPricing + pricing
+                    )
+                },
+                hintText = if (selectedPricing.size == 1) stringResource(R.string.filter_keep_one_hint) else null
+            )
+
+            FilterCard(
+                title = stringResource(R.string.filter_privacy),
+                items = privacies,
+                selectedItems = selectedPrivacy,
+                onToggle = { privacy ->
+                    if (selectedPrivacy.size == 1 && selectedPrivacy.contains(privacy)) return@FilterCard
+                    onPrivacyChange(
+                        if (privacy in selectedPrivacy) selectedPrivacy - privacy
+                        else selectedPrivacy + privacy
+                    )
+                },
+                hintText = if (selectedPrivacy.size == 1) stringResource(R.string.filter_keep_one_hint) else null
+            )
+
+            LoginFilterCard(
+                title = stringResource(R.string.filter_login_required),
+                selectedLoginRequired = selectedLoginRequired,
+                onLoginToggle = { option ->
+                    onLoginRequiredChange(
+                        if (option in selectedLoginRequired) emptySet()
+                        else setOf(option)
+                    )
+                },
+                hintText = if (selectedLoginRequired.isEmpty()) stringResource(R.string.filter_no_filter_hint) else null
+            )
+        }
+    }, confirmButton = {
+        TextButton(onClick = onDismiss) {
+            Text(stringResource(R.string.action_ok), fontWeight = FontWeight.Medium)
+        }
+    }, containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+    )
+}
+
+@Composable
+private fun FilterCard(
+    title: String,
+    items: List<String>,
+    selectedItems: Set<String>,
+    onToggle: (String) -> Unit,
+    hintText: String? = null
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items.forEach { item ->
+                    val isSelected = item in selectedItems
+                    FilterChip(
+                        selected = isSelected, onClick = { onToggle(item) }, label = {
+                        Text(
+                            item.capitalizeFirstLetter(),
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }, colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        labelColor = MaterialTheme.colorScheme.onSurface
+                    ), border = null, shape = MaterialTheme.shapes.small
+                    )
+                }
+            }
+            hintText?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LoginFilterCard(
+    title: String,
+    selectedLoginRequired: Set<String>,
+    onLoginToggle: (String) -> Unit,
+    hintText: String? = null
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf("Required", "Not Required").forEach { option ->
+                    val isSelected = option in selectedLoginRequired
+                    FilterChip(
+                        selected = isSelected, onClick = { onLoginToggle(option) }, label = {
+                        Text(
+                            option.capitalizeFirstLetter(),
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }, colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        labelColor = MaterialTheme.colorScheme.onSurface
+                    ), border = null, shape = MaterialTheme.shapes.small
+                    )
+                }
+            }
+            hintText?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingItem(
+    title: String,
+    description: String? = null,
+    icon: ImageVector,
+    iconColor: Color,
+    onClick: (() -> Unit)? = null,
+    trailingContent: @Composable (() -> Unit)? = null
+) {
+    ListItem(
+        headlineContent = {
+            Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+        },
+        supportingContent = description?.let {
+            { Text(it, style = MaterialTheme.typography.bodySmall) }
+        },
+        leadingContent = {
+            Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(24.dp))
+        },
+        trailingContent = trailingContent,
+        modifier = Modifier
+            .clickable(enabled = onClick != null) { onClick?.invoke() }
+            .padding(vertical = 4.dp),
+        colors = ListItemDefaults.colors(
+            headlineColor = MaterialTheme.colorScheme.onSurface,
+            supportingColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            leadingIconColor = iconColor,
+            trailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+        ),
+    )
+}
+
+@Composable
+private fun SettingsCard(
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = containerColor,
+        tonalElevation = 1.dp
+    ) {
+        Column(content = content)
+    }
+}
